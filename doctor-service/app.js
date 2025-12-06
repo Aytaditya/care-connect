@@ -1,7 +1,10 @@
 const express = require('express');
-const httpProxy = require('express-http-proxy');
+const dotenv = require('dotenv');
 const cors=require('cors');
 const cookieParser = require('cookie-parser');
+const doctorRoutes = require('./routes/doctor.route');
+const connectDB=require('./db/db')
+dotenv.config();
 
 const app = express();
 app.use(express.json());
@@ -13,15 +16,10 @@ app.use(cors({
 }));
 app.use(cookieParser());
 
-const PORT = 8000;
+const PORT = 8002;
 
-app.get('/',(req,res)=>{
-    res.send('API Gateway is running')
-})
-
-app.use('/patient',httpProxy('http://localhost:8001'));
-app.use('/doctor',httpProxy('http://localhost:8002'));
-
+app.use('/', doctorRoutes);
 app.listen(PORT,()=>{
-    console.log(`API Gateway is running on port ${PORT}`);
+    connectDB()
+    console.log(`Doctor Service is running on port ${PORT}`);
 })
