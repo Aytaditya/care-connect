@@ -19,7 +19,8 @@ app.use(cookieParser());
 const PORT = 8002;
 
 app.use('/', doctorRoutes);
-app.listen(PORT,()=>{
+
+app.listen(PORT,"0.0.0.0",()=>{
     connectDB()
     console.log(`Doctor Service is running on port ${PORT}`);
 })

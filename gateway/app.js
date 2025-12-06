@@ -19,9 +19,9 @@ app.get('/',(req,res)=>{
     res.send('API Gateway is running')
 })
 
-app.use('/patient',httpProxy('http://localhost:8001'));
-app.use('/doctor',httpProxy('http://localhost:8002'));
+app.use('/patient',httpProxy('http://patient-service:8001'));
+app.use('/doctor',httpProxy('http://doctor-service:8002'));
 
-app.listen(PORT,()=>{
+app.listen(PORT,"0.0.0.0",()=>{
     console.log(`API Gateway is running on port ${PORT}`);
 })

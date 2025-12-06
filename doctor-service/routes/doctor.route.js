@@ -7,4 +7,5 @@ router.post('/register',doctorController.register);
 router.post('/login',doctorController.login);
 router.put('/profile',authMiddleware.authenticateToken,doctorController.AddDoctorInfo);
 router.get('/profile',authMiddleware.authenticateToken,doctorController.getProfile);
+
 module.exports=router;

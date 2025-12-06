@@ -20,7 +20,7 @@ const PORT = 8001;
 
 app.use('/',patientRoutes)
 
-app.listen(PORT,()=>{
+app.listen(PORT,"0.0.0.0",()=>{
     connectDB();
     console.log(`Patient Service is running on port ${PORT}`);
 })
