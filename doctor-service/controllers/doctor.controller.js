@@ -125,3 +125,44 @@ module.exports.AddDoctorInfo = async (req, res) => {
     }
 };
 
+module.exports.getAllDoctors = async (req, res) => {
+    try {
+        const doctors = await Doctor.find()
+            .select("-password");
+
+        res.status(200).json(doctors);
+    } catch (error) {
+        console.log("Get All Doctors Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+module.exports.getDoctorById = async (req, res) => {
+    try {
+        const doctor = await Doctor.findById(req.params.id).select("-password");
+
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor not found" });
+        }
+
+        res.status(200).json(doctor);
+
+    } catch (error) {
+        console.error("Get Doctor By ID Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+module.exports.searchBySpecialization = async (req, res) => {
+    try {
+        const { specialization } = req.query;
+
+        const doctors = await Doctor.find({
+            specialization: { $regex: specialization, $options: "i" }
+        }).select("-password");
+
+        res.status(200).json(doctors);
+    } catch (error) {
+        console.log("Doctor Search Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
