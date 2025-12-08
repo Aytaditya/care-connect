@@ -143,3 +143,19 @@ module.exports.settings=async(req,res)=>{
         res.status(500).json({message:"Internal Server Error"})
     }
 }
+
+module.exports.getPatientById = async (req, res) => {
+    try {
+        const patient = await Patient.findById(req.params.id).select("-password");
+
+        if (!patient) {
+            return res.status(404).json({ message: "Doctor not found" });
+        }
+
+        res.status(200).json(patient);
+
+    } catch (error) {
+        console.error("Get Patient By ID Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};

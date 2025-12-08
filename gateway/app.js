@@ -9,7 +9,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({
     origin:"*",
     methods:["GET","POST","PUT","DELETE"],
-    credentials:true
 }));
 app.use(cookieParser());
 
@@ -21,6 +20,7 @@ app.get('/',(req,res)=>{
 
 app.use('/patient',httpProxy('http://patient-service:8001'));
 app.use('/doctor',httpProxy('http://doctor-service:8002'));
+app.use('/appointment',httpProxy('http://appointment-service:8003'));
 
 app.listen(PORT,"0.0.0.0",()=>{
     console.log(`API Gateway is running on port ${PORT}`);

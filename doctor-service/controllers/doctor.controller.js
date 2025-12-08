@@ -152,6 +152,7 @@ module.exports.getDoctorById = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
+
 module.exports.searchBySpecialization = async (req, res) => {
     try {
         const { specialization } = req.query;

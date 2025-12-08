@@ -17,6 +17,14 @@ services:
       - "8002:8002"
     depends_on:
       - database
+  appointment-service:
+    build: ./appointment-service
+    ports:
+      - "8003:8003"
+    depends_on:
+      - database
+      - patient-service
+      - doctor-service
   gateway-service:
     build: ./gateway
     ports:

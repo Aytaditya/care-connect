@@ -8,6 +8,6 @@ router.post('/login',doctorController.login);
 router.put('/profile',authMiddleware.authenticateToken,doctorController.AddDoctorInfo);
 router.get('/profile',authMiddleware.authenticateToken,doctorController.getProfile);
 router.get('/profiles',doctorController.getAllDoctors);
-
+router.get('/get-doctor-by-id/:id',doctorController.getDoctorById);
 
 module.exports=router;

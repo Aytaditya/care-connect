@@ -8,5 +8,6 @@ router.post('/login', patientController.login);
 router.put('/profile', authMiddleware.authenticateToken, patientController.addHealthInfo);
 router.put('/update-profile', authMiddleware.authenticateToken, patientController.settings);
 router.get('/profile', authMiddleware.authenticateToken,patientController.getProfile);
+router.get('/get-patient-by-id/:id', patientController.getPatientById);
 
 module.exports = router;
