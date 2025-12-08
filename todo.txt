@@ -1,0 +1,5 @@
+make a api to fetch doctor availablity by doctor id 
+add doctor days 
+add rabbit mq to inform doctor about new appointment 
+add notifciation service
+replace call with grpc
