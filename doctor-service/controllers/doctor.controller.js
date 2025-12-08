@@ -100,7 +100,7 @@ module.exports.getProfile = async (req, res) => {
 
 module.exports.AddDoctorInfo = async (req, res) => {
     try {
-        const { experience, fees, availability } = req.body;
+        const { experience, fees, availability,phone } = req.body;
         const doctorId = req.user.doctorId;
 
         const doctor = await Doctor.findById(doctorId).select('-password');
@@ -111,6 +111,7 @@ module.exports.AddDoctorInfo = async (req, res) => {
         if (experience !== undefined) doctor.experience = experience;
         if (fees !== undefined) doctor.fees = fees;
         if (availability !== undefined) doctor.availability = availability;
+        if (phone !== undefined) doctor.phone = phone;
 
         await doctor.save();
 
@@ -164,6 +165,95 @@ module.exports.searchBySpecialization = async (req, res) => {
         res.status(200).json(doctors);
     } catch (error) {
         console.log("Doctor Search Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+module.exports.getDoctorAvailablity=async(req,res)=>{
+    try {
+        const doctorId = req.params.id;
+        const doctor = await Doctor.findById(doctorId);
+        //console.log("Doctor fetched for availability:", doctor);
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor not found" });
+        }
+        const doctorAvailability = doctor.availability;
+        res.status(200).json(doctorAvailability);
+    } catch (error) {
+        console.log("Get Doctor Availability Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+}
+
+module.exports.updateAvailability = async (req, res) => {
+    try {
+        const { availability } = req.body;
+        const doctorId = req.user.doctorId;
+
+        if (!availability || !Array.isArray(availability)) {
+            return res.status(400).json({ message: "Availability array is required" });
+        }
+
+        const doctor = await Doctor.findById(doctorId);
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor not found" });
+        }
+
+        // Validate each availability slot
+        const validatedAvailability = availability.map(slot => {
+            if (!slot.day || !slot.startTime || !slot.endTime) {
+                throw new Error("Each slot must have day, startTime, and endTime");
+            }
+            
+            if (![
+                "Monday", "Tuesday", "Wednesday", "Thursday",
+                "Friday", "Saturday", "Sunday"
+            ].includes(slot.day)) {
+                throw new Error(`Invalid day: ${slot.day}`);
+            }
+
+            // Validate time format (HH:MM)
+            const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+            if (!timeRegex.test(slot.startTime) || !timeRegex.test(slot.endTime)) {
+                throw new Error("Invalid time format. Use HH:MM");
+            }
+
+            // Validate that endTime is after startTime
+            const start = new Date(`1970-01-01T${slot.startTime}:00`);
+            const end = new Date(`1970-01-01T${slot.endTime}:00`);
+            if (end <= start) {
+                throw new Error("End time must be after start time");
+            }
+
+            return {
+                day: slot.day,
+                startTime: slot.startTime,
+                endTime: slot.endTime
+            };
+        });
+
+        // Remove duplicates (same day)
+        const uniqueAvailability = validatedAvailability.reduce((acc, current) => {
+            const x = acc.find(item => item.day === current.day);
+            if (!x) {
+                return acc.concat([current]);
+            }
+            return acc;
+        }, []);
+
+        doctor.availability = uniqueAvailability;
+        await doctor.save();
+
+        res.status(200).json({
+            message: "Availability updated successfully",
+            availability: doctor.availability
+        });
+
+    } catch (error) {
+        console.log("Update Availability Error:", error);
+        if (error.message.includes("Invalid") || error.message.includes("required")) {
+            return res.status(400).json({ message: error.message });
+        }
         res.status(500).json({ message: "Internal Server Error" });
     }
 };

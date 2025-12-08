@@ -18,7 +18,6 @@ module.exports.createAppointment=async(req,res)=>{
         if(patientResponse.status!==200){
             return res.status(404).json({message:"Patient not found"});
         }
-        // TODO : check for doctor's availability at given date and time
 
         const newAppointment=new Appointment({
             patientId,
@@ -86,3 +85,30 @@ module.exports.cancelAppointment = async (req, res) => {
     }
 };
 
+module.exports.confirmAppointment=async(req,res)=>{
+    try {
+        const appointmentId  = req.params.id;
+        const {doctorId} = req.body;
+        const appointment=await Appointment.findById(appointmentId);
+        console.log(appointment);
+
+        if (!appointment) {
+            return res.status(404).json({ message: "Appointment not found" });
+        }
+        if(appointment.doctorId.toString()!=doctorId){
+            return res.status(403).json({ message: "Unauthorized action" });
+        }
+        if (appointment.doctorId.toString() !== doctorId) {
+            return res.status(403).json({ message: "Unauthorized action" });
+        }
+        appointment.status = "confirmed";
+        await appointment.save();
+        res.status(200).json({
+            message: "Appointment confirmed",
+            appointment
+        });
+    } catch (error) {
+        console.log("Confirm Appointment Error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+}

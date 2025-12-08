@@ -29,7 +29,9 @@ import {
   Stethoscope,
   Users,
   Star,
-  DollarSign
+  DollarSign,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 
 const PatientDashboard = () => {
@@ -52,6 +54,7 @@ const PatientDashboard = () => {
   const [upcomingAppointments, setUpcomingAppointments] = useState([]);
   const [medicalHistory, setMedicalHistory] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [doctorAvailability, setDoctorAvailability] = useState({});
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -63,9 +66,12 @@ const PatientDashboard = () => {
     reason: ''
   });
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
+  const [showAvailability, setShowAvailability] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
 
   const navigate = useNavigate();
-  // CORRECTED: Direct endpoints without /api
   const API_BASE_URL = 'http://localhost:8000';
   const PATIENT_API = `${API_BASE_URL}/patient`;
   const APPOINTMENT_API = `${API_BASE_URL}/appointment`;
@@ -82,14 +88,14 @@ const PatientDashboard = () => {
       const token = localStorage.getItem('token');
       console.log('Fetching profile from:', `${PATIENT_API}/profile`);
       console.log('Using token:', token);
-      
+
       const response = await axios.get(`${PATIENT_API}/profile`, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Profile response:', response.data);
       setPatient(response.data);
       setProfileData({
@@ -122,27 +128,26 @@ const PatientDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const user = JSON.parse(localStorage.getItem('user'));
-      
+
       console.log('Fetching appointments from:', `${APPOINTMENT_API}/get-patient-appointments/${user?.id}`);
-      
+
       if (user && user.id) {
         const response = await axios.get(`${APPOINTMENT_API}/get-patient-appointments/${user.id}`, {
-          headers: { 
+          headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
-        
+
         console.log('Appointments response:', response.data);
-        
-        // Filter upcoming appointments (status !== 'cancelled' and date is in future)
+
         const now = new Date();
         const upcoming = response.data.filter(apt => {
           if (!apt.date) return false;
           const appointmentDate = new Date(apt.date);
           return apt.status !== 'cancelled' && appointmentDate >= now;
         });
-        
+
         setUpcomingAppointments(upcoming);
         setMedicalHistory(response.data);
       }
@@ -166,19 +171,138 @@ const PatientDashboard = () => {
     }
   };
 
+  const fetchDoctorAvailability = async (doctorId) => {
+    try {
+      setLoadingAvailability(true);
+      console.log('Fetching availability for doctor:', doctorId);
+
+      const response = await axios.get(`${DOCTOR_API}/availability/${doctorId}`);
+      console.log('Doctor availability response:', response.data);
+
+      setDoctorAvailability(prev => ({
+        ...prev,
+        [doctorId]: response.data
+      }));
+
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching doctor availability:', error);
+      toast.error('Failed to fetch doctor availability');
+      return null;
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  const getDayFromDate = (dateString) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const date = new Date(dateString);
+    return days[date.getDay()];
+  };
+
+  const generateTimeSlots = (startTime, endTime, interval = 30) => {
+    const slots = [];
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+
+    let currentHour = startHour;
+    let currentMinute = startMinute;
+
+    while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
+      const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+      slots.push(timeString);
+
+      currentMinute += interval;
+      if (currentMinute >= 60) {
+        currentHour += Math.floor(currentMinute / 60);
+        currentMinute = currentMinute % 60;
+      }
+    }
+
+    return slots;
+  };
+
+  const checkDoctorAvailability = async (doctorId, date) => {
+    if (!doctorId || !date) {
+      setAvailableTimeSlots([]);
+      return;
+    }
+
+    try {
+      setLoadingAvailability(true);
+
+      // Fetch availability if not already loaded
+      let availability = doctorAvailability[doctorId];
+      if (!availability) {
+        availability = await fetchDoctorAvailability(doctorId);
+      }
+
+      if (!availability || availability.length === 0) {
+        setAvailableTimeSlots([]);
+        toast.info('This doctor has not set their availability yet');
+        return;
+      }
+
+      const dayOfWeek = getDayFromDate(date);
+      const dayAvailability = availability.find(avail => avail.day === dayOfWeek);
+
+      if (!dayAvailability) {
+        setAvailableTimeSlots([]);
+        toast.info(`Doctor is not available on ${dayOfWeek}`);
+        return;
+      }
+
+      // Generate time slots for the available hours
+      const slots = generateTimeSlots(dayAvailability.startTime, dayAvailability.endTime);
+      setAvailableTimeSlots(slots);
+
+      // Check if current time selection is valid
+      if (appointmentForm.time && !slots.includes(appointmentForm.time)) {
+        setAppointmentForm(prev => ({ ...prev, time: '' }));
+        toast.info('Selected time is not available. Please choose from available slots.');
+      }
+
+    } catch (error) {
+      console.error('Error checking availability:', error);
+      setAvailableTimeSlots([]);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  const handleDateChange = async (date) => {
+    setSelectedDate(date);
+    setAppointmentForm(prev => ({ ...prev, date, time: '' }));
+
+    const doctorId = appointmentForm.doctorId || selectedDoctor?._id;
+    if (doctorId) {
+      await checkDoctorAvailability(doctorId, date);
+    }
+  };
+
+  const handleDoctorSelect = async (doctorId) => {
+    setAppointmentForm(prev => ({ ...prev, doctorId }));
+    setSelectedDate('');
+    setAvailableTimeSlots([]);
+
+    if (doctorId && appointmentForm.date) {
+      await checkDoctorAvailability(doctorId, appointmentForm.date);
+    }
+  };
+
   const updateHealthInfo = async () => {
     try {
       const token = localStorage.getItem('token');
       console.log('Updating health info to:', `${PATIENT_API}/profile`);
       console.log('Data:', medicalInfo);
-      
+
       const response = await axios.put(`${PATIENT_API}/profile`, medicalInfo, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Update health info response:', response.data);
       toast.success('Health information updated successfully');
       setShowHealthModal(false);
@@ -195,14 +319,14 @@ const PatientDashboard = () => {
       const token = localStorage.getItem('token');
       console.log('Updating profile to:', `${PATIENT_API}/update-profile`);
       console.log('Data:', profileData);
-      
+
       const response = await axios.put(`${PATIENT_API}/update-profile`, profileData, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Update profile response:', response.data);
       toast.success('Profile updated successfully');
       setShowProfileModal(false);
@@ -218,12 +342,18 @@ const PatientDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const user = JSON.parse(localStorage.getItem('user'));
-      
+
       console.log('Creating appointment at:', `${APPOINTMENT_API}/create-appointment`);
       console.log('Data:', appointmentForm);
-      
+
       if (!user || !user.id) {
         toast.error('User not found. Please login again.');
+        return;
+      }
+
+      // Validate time slot
+      if (availableTimeSlots.length > 0 && !availableTimeSlots.includes(appointmentForm.time)) {
+        toast.error('Please select an available time slot');
         return;
       }
 
@@ -238,7 +368,7 @@ const PatientDashboard = () => {
       console.log('Appointment request data:', appointmentData);
 
       const response = await axios.post(`${APPOINTMENT_API}/create-appointment`, appointmentData, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
@@ -254,6 +384,8 @@ const PatientDashboard = () => {
         reason: ''
       });
       setSelectedDoctor(null);
+      setSelectedDate('');
+      setAvailableTimeSlots([]);
       fetchAppointments();
     } catch (error) {
       console.error('Error creating appointment:', error);
@@ -270,14 +402,14 @@ const PatientDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       console.log('Cancelling appointment at:', `${APPOINTMENT_API}/cancel-appointment/${appointmentId}`);
-      
+
       const response = await axios.put(`${APPOINTMENT_API}/cancel-appointment/${appointmentId}`, {}, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Cancel appointment response:', response.data);
       toast.success('Appointment cancelled successfully');
       fetchAppointments();
@@ -338,7 +470,12 @@ const PatientDashboard = () => {
     }
   };
 
-  // Check if user is authenticated on component mount
+  const viewDoctorAvailability = async (doctor) => {
+    setSelectedDoctor(doctor);
+    setShowAvailability(true);
+    await fetchDoctorAvailability(doctor._id);
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -581,7 +718,7 @@ const PatientDashboard = () => {
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-xl font-bold">Upcoming Appointments</h3>
-                  <button 
+                  <button
                     onClick={() => setActiveTab('appointments')}
                     className="text-blue-600 hover:text-blue-800 font-medium flex items-center"
                   >
@@ -604,7 +741,9 @@ const PatientDashboard = () => {
                     {upcomingAppointments.slice(0, 3).map((appointment) => {
                       const doctor = getDoctorById(appointment.doctorId);
                       return (
-                        <div key={appointment._id} className="border rounded-xl p-4 hover:bg-gray-50 transition">
+                        <div key={appointment._id} className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4">
                           <div className="flex justify-between items-center">
                             <div>
                               <h4 className="font-semibold">{doctor.name}</h4>
@@ -620,7 +759,7 @@ const PatientDashboard = () => {
                               {appointment.status || 'scheduled'}
                             </span>
                             <div className="space-x-2">
-                              <button 
+                              <button
                                 onClick={() => {
                                   setActiveTab('appointments');
                                 }}
@@ -628,7 +767,7 @@ const PatientDashboard = () => {
                               >
                                 View Details
                               </button>
-                              <button 
+                              <button
                                 onClick={() => cancelAppointment(appointment._id)}
                                 className="text-red-600 hover:text-red-800 text-sm font-medium"
                               >
@@ -703,7 +842,9 @@ const PatientDashboard = () => {
                   {upcomingAppointments.map((appointment) => {
                     const doctor = getDoctorById(appointment.doctorId);
                     return (
-                      <div key={appointment._id} className="border rounded-xl p-6 hover:shadow-md transition">
+                      <div key={appointment._id} className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4">
                         <div className="flex justify-between items-start">
                           <div className="flex items-start space-x-4">
                             <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -734,12 +875,9 @@ const PatientDashboard = () => {
                               {appointment.status || 'scheduled'}
                             </span>
                             <div className="mt-3 space-x-2">
-                              <button className="text-blue-600 hover:text-blue-800 font-medium text-sm">
-                                Reschedule
-                              </button>
-                              <button 
+                              <button
                                 onClick={() => cancelAppointment(appointment._id)}
-                                className="text-red-600 hover:text-red-800 font-medium text-sm"
+                                className="text-red-600 hover:text-red-800 font-medium text-sm cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -760,6 +898,7 @@ const PatientDashboard = () => {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Medical History</h2>
               </div>
+
               {medicalHistory.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="mx-auto h-16 w-16 text-gray-400" />
@@ -767,27 +906,41 @@ const PatientDashboard = () => {
                   <p className="mt-2 text-gray-600">Your appointment history will appear here</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
                   {medicalHistory.map((record) => {
                     const doctor = getDoctorById(record.doctorId);
                     return (
-                      <div key={record._id} className="border rounded-xl p-6 hover:shadow-md transition">
+                      <div
+                        key={record._id}
+                        className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4"
+                      >
                         <div className="flex justify-between items-start">
                           <div>
                             <div className="flex items-center space-x-3 mb-3">
-                              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(record.status)}`}>
-                                {record.status || 'completed'}
+                              <span
+                                className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                                  record.status
+                                )}`}
+                              >
+                                {record.status || "completed"}
                               </span>
                               <span className="text-gray-600">{formatDate(record.date)}</span>
                             </div>
-                            <h3 className="font-bold text-lg">Appointment with {doctor.name}</h3>
+
+                            <h3 className="font-bold text-lg">
+                              Appointment with {doctor.name}
+                            </h3>
                             <p className="text-gray-600">{doctor.specialization}</p>
+
                             <div className="mt-3 space-y-2">
                               <div className="flex items-center text-gray-700">
                                 <Clock size={16} className="mr-2" />
                                 <span className="font-medium">Time:</span>
                                 <span className="ml-2">{formatTime(record.time)}</span>
                               </div>
+
                               {record.reason && (
                                 <div className="flex items-start text-gray-700">
                                   <span className="font-medium mr-2">Reason:</span>
@@ -805,6 +958,7 @@ const PatientDashboard = () => {
             </div>
           )}
 
+
           {/* Health Info Tab */}
           {activeTab === 'health' && (
             <div className="bg-white rounded-xl shadow-lg p-6">
@@ -820,7 +974,9 @@ const PatientDashboard = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border rounded-xl p-6">
+                <div className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4">
                   <h3 className="font-bold text-lg mb-4 flex items-center">
                     <Heart className="mr-2 text-red-500" size={20} />
                     Medical Information
@@ -841,7 +997,9 @@ const PatientDashboard = () => {
                   </div>
                 </div>
 
-                <div className="border rounded-xl p-6">
+                <div className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4">
                   <h3 className="font-bold text-lg mb-4 flex items-center">
                     <Shield className="mr-2 text-green-500" size={20} />
                     Personal Details
@@ -868,18 +1026,24 @@ const PatientDashboard = () => {
           {/* Find Doctors Tab */}
           {activeTab === 'doctors' && (
             <div className="bg-white rounded-xl shadow-lg p-6">
+              {/* Header + Search */}
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Find Doctors</h2>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Search
+                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
                   <input
                     type="text"
                     placeholder="Search by specialization..."
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg 
+                     focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
               </div>
 
+              {/* No Doctors */}
               {doctors.length === 0 ? (
                 <div className="text-center py-12">
                   <Users className="mx-auto h-16 w-16 text-gray-400" />
@@ -887,42 +1051,81 @@ const PatientDashboard = () => {
                   <p className="mt-2 text-gray-600">Please check back later</p>
                 </div>
               ) : (
+                /* Doctor Cards Grid */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {doctors.map((doctor) => (
-                    <div key={doctor._id} className="border rounded-xl p-6 hover:shadow-lg transition">
-                      <div className="flex items-start space-x-4">
-                        <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-xl">
+                    <div
+                      key={doctor._id}
+                      className="rounded-2xl border border-gray-200 bg-gradient-to-b 
+                       from-white to-gray-50 shadow-sm hover:shadow-md 
+                       transition-all p-6 space-y-4"
+                    >
+                      <div className="flex items-start gap-4">
+                        {/* Profile Initial */}
+                        <div
+                          className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 
+                           flex items-center justify-center text-white text-2xl 
+                           font-bold shadow-md"
+                        >
                           {doctor.name.charAt(0)}
                         </div>
+
+                        {/* Info */}
                         <div className="flex-1">
-                          <h3 className="font-bold text-lg">{doctor.name}</h3>
-                          <p className="text-gray-600">{doctor.specialization}</p>
-                          
-                          <div className="mt-4 space-y-2">
+                          <h3 className="text-xl font-semibold text-gray-900">
+                            {doctor.name}
+                          </h3>
+                          <p className="text-gray-600 text-sm">{doctor.specialization}</p>
+
+                          <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-700">
                             {doctor.experience && (
-                              <div className="flex items-center text-gray-700">
+                              <div className="flex items-center">
                                 <Star size={16} className="mr-2 text-yellow-500" />
                                 <span>{doctor.experience} years experience</span>
                               </div>
                             )}
+
                             {doctor.fees && (
-                              <div className="flex items-center text-gray-700">
+                              <div className="flex items-center">
                                 <DollarSign size={16} className="mr-2 text-green-500" />
-                                <span>Fee: ${doctor.fees}</span>
+                                <span>
+                                  Fee: <span className="font-semibold">${doctor.fees}</span>
+                                </span>
                               </div>
                             )}
-                          </div>
 
-                          <button
-                            onClick={() => {
-                              setSelectedDoctor(doctor);
-                              setShowAppointmentModal(true);
-                            }}
-                            className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition"
-                          >
-                            Book Appointment
-                          </button>
+                            <div className="flex items-center">
+                              <Clock size={16} className="mr-2 text-blue-500" />
+                              <span>
+                                Availability:{" "}
+                                {doctorAvailability[doctor._id]?.length || 0} days/week
+                              </span>
+                            </div>
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Buttons */}
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          onClick={() => viewDoctorAvailability(doctor)}
+                          className="flex-1 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 
+                           text-gray-800 font-medium flex items-center justify-center gap-2"
+                        >
+                          <Calendar size={16} />
+                          Schedule
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setSelectedDoctor(doctor);
+                            setShowAppointmentModal(true);
+                          }}
+                          className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 
+                           text-white font-medium shadow flex items-center justify-center"
+                        >
+                          Book
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -931,11 +1134,12 @@ const PatientDashboard = () => {
             </div>
           )}
 
+
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-2xl font-bold mb-6">Profile Information</h2>
-              
+
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
                   <div className="space-y-6">
@@ -1024,7 +1228,7 @@ const PatientDashboard = () => {
                 <label className="block text-gray-700 mb-2">Blood Group</label>
                 <select
                   value={medicalInfo.bloodGroup}
-                  onChange={(e) => setMedicalInfo({...medicalInfo, bloodGroup: e.target.value})}
+                  onChange={(e) => setMedicalInfo({ ...medicalInfo, bloodGroup: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select Blood Group</option>
@@ -1042,7 +1246,7 @@ const PatientDashboard = () => {
                 <label className="block text-gray-700 mb-2">Allergies</label>
                 <textarea
                   value={medicalInfo.allergies}
-                  onChange={(e) => setMedicalInfo({...medicalInfo, allergies: e.target.value})}
+                  onChange={(e) => setMedicalInfo({ ...medicalInfo, allergies: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                   placeholder="List any allergies (separated by commas)"
                   rows="3"
@@ -1052,7 +1256,7 @@ const PatientDashboard = () => {
                 <label className="block text-gray-700 mb-2">Medical Conditions</label>
                 <textarea
                   value={medicalInfo.conditions}
-                  onChange={(e) => setMedicalInfo({...medicalInfo, conditions: e.target.value})}
+                  onChange={(e) => setMedicalInfo({ ...medicalInfo, conditions: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                   placeholder="List any medical conditions (separated by commas)"
                   rows="3"
@@ -1093,7 +1297,7 @@ const PatientDashboard = () => {
                 <input
                   type="text"
                   value={profileData.name}
-                  onChange={(e) => setProfileData({...profileData, name: e.target.value})}
+                  onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                   required
                 />
@@ -1103,7 +1307,7 @@ const PatientDashboard = () => {
                 <input
                   type="email"
                   value={profileData.email}
-                  onChange={(e) => setProfileData({...profileData, email: e.target.value})}
+                  onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                   required
                 />
@@ -1114,7 +1318,7 @@ const PatientDashboard = () => {
                   <input
                     type="number"
                     value={profileData.age}
-                    onChange={(e) => setProfileData({...profileData, age: e.target.value})}
+                    onChange={(e) => setProfileData({ ...profileData, age: e.target.value })}
                     className="w-full p-3 border border-gray-300 rounded-lg"
                     min="1"
                     max="120"
@@ -1124,7 +1328,7 @@ const PatientDashboard = () => {
                   <label className="block text-gray-700 mb-2">Gender</label>
                   <select
                     value={profileData.gender}
-                    onChange={(e) => setProfileData({...profileData, gender: e.target.value})}
+                    onChange={(e) => setProfileData({ ...profileData, gender: e.target.value })}
                     className="w-full p-3 border border-gray-300 rounded-lg"
                   >
                     <option value="">Select Gender</option>
@@ -1139,7 +1343,7 @@ const PatientDashboard = () => {
                 <input
                   type="tel"
                   value={profileData.phone}
-                  onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
+                  onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -1171,11 +1375,13 @@ const PatientDashboard = () => {
               <button onClick={() => {
                 setShowAppointmentModal(false);
                 setSelectedDoctor(null);
+                setSelectedDate('');
+                setAvailableTimeSlots([]);
               }} className="text-gray-400 hover:text-gray-600">
                 <X size={24} />
               </button>
             </div>
-            
+
             {selectedDoctor && (
               <div className="mb-6 p-4 bg-blue-50 rounded-lg">
                 <div className="flex items-center space-x-3">
@@ -1187,11 +1393,6 @@ const PatientDashboard = () => {
                     <p className="text-gray-600 text-sm">{selectedDoctor.specialization}</p>
                   </div>
                 </div>
-                <input
-                  type="hidden"
-                  value={selectedDoctor._id}
-                  onChange={(e) => setAppointmentForm({...appointmentForm, doctorId: selectedDoctor._id})}
-                />
               </div>
             )}
 
@@ -1201,7 +1402,7 @@ const PatientDashboard = () => {
                   <label className="block text-gray-700 mb-2">Select Doctor</label>
                   <select
                     value={appointmentForm.doctorId}
-                    onChange={(e) => setAppointmentForm({...appointmentForm, doctorId: e.target.value})}
+                    onChange={(e) => handleDoctorSelect(e.target.value)}
                     className="w-full p-3 border border-gray-300 rounded-lg"
                     required
                   >
@@ -1214,49 +1415,75 @@ const PatientDashboard = () => {
                   </select>
                 </div>
               )}
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Date</label>
-                  <input
-                    type="date"
-                    value={appointmentForm.date}
-                    onChange={(e) => setAppointmentForm({...appointmentForm, date: e.target.value})}
-                    className="w-full p-3 border border-gray-300 rounded-lg"
-                    min={new Date().toISOString().split('T')[0]}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Time</label>
-                  <input
-                    type="time"
-                    value={appointmentForm.time}
-                    onChange={(e) => setAppointmentForm({...appointmentForm, time: e.target.value})}
-                    className="w-full p-3 border border-gray-300 rounded-lg"
-                    required
-                  />
-                </div>
+
+              <div>
+                <label className="block text-gray-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={appointmentForm.date}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg"
+                  min={new Date().toISOString().split('T')[0]}
+                  required
+                />
+                {loadingAvailability && selectedDate && (
+                  <p className="text-sm text-blue-600 mt-1">Checking doctor availability...</p>
+                )}
               </div>
-              
+
+              {availableTimeSlots.length > 0 && (
+                <div>
+                  <label className="block text-gray-700 mb-2">
+                    Available Time Slots
+                    <span className="text-green-600 text-sm ml-2">
+                      ({availableTimeSlots.length} slots available)
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {availableTimeSlots.map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setAppointmentForm({ ...appointmentForm, time: slot })}
+                        className={`p-2 rounded-lg border ${appointmentForm.time === slot ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}
+                      >
+                        {formatTime(slot)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {appointmentForm.date && availableTimeSlots.length === 0 && !loadingAvailability && (
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                  <p className="text-red-600 text-sm">
+                    {appointmentForm.doctorId
+                      ? `Doctor is not available on ${getDayFromDate(appointmentForm.date)}`
+                      : 'Please select a doctor first'}
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-gray-700 mb-2">Reason for Appointment</label>
                 <textarea
                   value={appointmentForm.reason}
-                  onChange={(e) => setAppointmentForm({...appointmentForm, reason: e.target.value})}
+                  onChange={(e) => setAppointmentForm({ ...appointmentForm, reason: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                   placeholder="Briefly describe your symptoms or reason for visit"
                   rows="3"
                 />
               </div>
             </div>
-            
+
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => {
                   setShowAppointmentModal(false);
                   setAppointmentForm({ doctorId: '', date: '', time: '', reason: '' });
                   setSelectedDoctor(null);
+                  setSelectedDate('');
+                  setAvailableTimeSlots([]);
                 }}
                 className="flex-1 border border-gray-300 hover:bg-gray-50 py-3 rounded-lg font-medium transition"
               >
@@ -1264,12 +1491,85 @@ const PatientDashboard = () => {
               </button>
               <button
                 onClick={createAppointment}
-                disabled={!appointmentForm.doctorId || !appointmentForm.date || !appointmentForm.time}
+                disabled={!appointmentForm.doctorId || !appointmentForm.date || !appointmentForm.time || !appointmentForm.reason}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition"
               >
                 Book Appointment
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Doctor Availability Modal */}
+      {showAvailability && selectedDoctor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-bold">{selectedDoctor.name}'s Schedule</h3>
+                <p className="text-gray-600">{selectedDoctor.specialization}</p>
+              </div>
+              <button onClick={() => {
+                setShowAvailability(false);
+                setSelectedDoctor(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            {loadingAvailability ? (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading schedule...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {doctorAvailability[selectedDoctor._id]?.length > 0 ? (
+                  doctorAvailability[selectedDoctor._id].map((slot) => (
+                    <div key={slot._id} className="border rounded-lg p-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="font-semibold">{slot.day}</h4>
+                          <div className="flex items-center space-x-4 mt-1">
+                            <span className="flex items-center text-green-600">
+                              <CheckCircle size={16} className="mr-1" />
+                              {formatTime(slot.startTime)}
+                            </span>
+                            <span className="text-gray-400">to</span>
+                            <span className="flex items-center text-red-600">
+                              <XCircle size={16} className="mr-1" />
+                              {formatTime(slot.endTime)}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+                          Available
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Calendar className="mx-auto h-12 w-12 text-gray-400" />
+                    <h4 className="mt-4 font-semibold text-gray-700">No schedule available</h4>
+                    <p className="text-gray-600">This doctor hasn't set their availability yet</p>
+                  </div>
+                )}
+
+                <div className="mt-6">
+                  <button
+                    onClick={() => {
+                      setShowAvailability(false);
+                      setShowAppointmentModal(true);
+                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition"
+                  >
+                    Book Appointment with {selectedDoctor.name}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

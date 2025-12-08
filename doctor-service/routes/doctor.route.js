@@ -9,5 +9,7 @@ router.put('/profile',authMiddleware.authenticateToken,doctorController.AddDocto
 router.get('/profile',authMiddleware.authenticateToken,doctorController.getProfile);
 router.get('/profiles',doctorController.getAllDoctors);
 router.get('/get-doctor-by-id/:id',doctorController.getDoctorById);
+router.get('/availability/:id',doctorController.getDoctorAvailablity);
+router.put('/update-availability',authMiddleware.authenticateToken,doctorController.updateAvailability);
 
 module.exports=router;
