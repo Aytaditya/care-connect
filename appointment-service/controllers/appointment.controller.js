@@ -1,6 +1,7 @@
 const axios = require("axios");        
 const amqp = require("amqplib");
 const Appointment=require('../models/appointment.model')
+const {subscribeToQueue,publishToQueue}=require('../service/rabbit');
 
 module.exports.createAppointment=async(req,res)=>{
     try {
@@ -10,15 +11,28 @@ module.exports.createAppointment=async(req,res)=>{
         }
         // validating doctor
         const doctorResponse=await axios.get(`http://doctor-service:8002/get-doctor-by-id/${doctorId}`);
+        console.log(doctorResponse.data);
+        const doctorData=doctorResponse.data;
         if(!doctorResponse.data){
             return res.status(404).json({message:"Doctor not found"});
         }
         // validating patient
         const patientResponse=await axios.get(`http://patient-service:8001/get-patient-by-id/${patientId}`);
+        console.log(patientResponse.data);
+        const patientData=patientResponse.data;
         if(patientResponse.status!==200){
             return res.status(404).json({message:"Patient not found"});
         }
-
+        const appointmentDetail={
+            patientName:patientData.name,
+            patientEmail:patientData.email,
+            doctorName:doctorData.name,
+            doctorEmail:doctorData.email,
+            date,
+            time,
+            reason,
+            status:"pending"
+        }
         const newAppointment=new Appointment({
             patientId,
             doctorId,
@@ -27,6 +41,9 @@ module.exports.createAppointment=async(req,res)=>{
             reason
         });
         const savedAppointment=await newAppointment.save();
+        // Publish appointment created event
+        await publishToQueue("appointment_created",JSON.stringify(appointmentDetail));
+
         return res.status(201).json({
             message:"Appointment created successfully",
             appointment:savedAppointment
