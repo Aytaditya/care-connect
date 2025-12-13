@@ -16,11 +16,17 @@ This project is designed to showcase **production-grade backend engineering prac
 * Secure patient profile management
 * JWT-based protected routes
 
+![Patient login](./images/patient_login.png)
+
+
 ### 👨‍⚕️ Doctor Service
 
 * Doctor onboarding & authentication
 * Doctor profile and specialization management
 * Secure access using middleware
+
+![Doctor login](./images/doctor_login.png)
+![Doctor signup](./images/doctor_signup.png)
 
 ### 📅 Appointment Service
 
@@ -28,11 +34,15 @@ This project is designed to showcase **production-grade backend engineering prac
 * Validates patient & doctor existence via service calls
 * Publishes events to message broker
 
+![Doctor Appointment](./images/doctor_appointment.png)
+
 ### 🔔 Notification Service
 
 * Listens to appointment events
 * Sends email notifications asynchronously
 * Decoupled from core business logic
+
+![Mail](./images/mail.png)
 
 ### 🌐 API Gateway
 
@@ -45,6 +55,8 @@ This project is designed to showcase **production-grade backend engineering prac
 * Built with **React + Vite**
 * Separate dashboards for doctors and patients
 * Auth-protected routes
+
+![Doctor login](./images/doctor_login.png)
 
 ---
 
@@ -64,6 +76,10 @@ Client → API Gateway → Services
                      └── Notification Service (Async)
 ```
 
+![Doctor Dashboard](./images/doctor_dashboard.png)
+![Patient Dashboard](./images//patient_dashboard.png)
+![Patient Dashboard](./images/patient_dashboard2.png)
+
 ---
 
 ## 🛠️ Tech Stack
@@ -79,7 +95,6 @@ Client → API Gateway → Services
 ### Frontend
 
 * **React**
-* **Vite**
 * **JavaScript**
 * **Tailwind**
 
@@ -89,6 +104,9 @@ Client → API Gateway → Services
 * **Docker Compose**
 * **Service-to-Service Communication**
 * **Container Networking**
+
+![Patient history](./images/patient_history.png)
+![Patient Medical](./images/patient_medical.png)
 
 ---
 
@@ -135,6 +153,8 @@ Each service follows a clean structure:
   * Appointment created events
   * Notification triggers
 * Improves scalability & fault tolerance
+
+![Finding doctor](./images/finding_doctor.png)
 
 ---
 
